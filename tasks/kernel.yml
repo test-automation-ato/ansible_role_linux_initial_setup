@@ -1,0 +1,71 @@
+---
+- name: Copy kernel configuration file
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_kernel_conf_src }}"
+    dest: "/etc/sysctl.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  register: res_kernel_copy
+
+- name: Apply and failback kernel configuration
+  block:
+    - name: Apply sysctl.conf
+      ansible.builtin.command:
+        cmd: sysctl -p
+      when: res_kernel_copy.changed
+      tags: skip_ansible_lint
+
+  rescue:
+    - name: Restore the backup if validation fails
+      ansible.builtin.copy:
+        src: "{{ res_kernel_copy.backup_file }}"
+        dest: /etc/sysctl.conf
+        mode: "0644"
+        remote_src: true
+
+    - name: Apply sysctl.conf
+      ansible.builtin.command:
+        cmd: sysctl -p
+      when: res_kernel_copy.changed
+      tags: skip_ansible_lint
+
+# test
+- name: Test blcok
+  tags:
+    - check_kernel
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of kernel configuration files
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_kernel_conf_src }}"
+        dest: "/etc/sysctl.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_kernel_conf_copy
+
+    - name: "Check /etc/sysctl.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_kernel_conf_copy.changed | bool == 0"
+        msg: "kernel configuration is differ from templates. \
+              {{ res_test_kernel_conf_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_kernel
+    - output_all
+    - never
+  block:
+    - name: "Read /etc/sysctl.conf"
+      ansible.builtin.slurp:
+        src: "/etc/sysctl.conf"
+      register: res_kernel_content
+
+    - name: "Output /etc/sysctl.conf"
+      ansible.builtin.debug:
+        var: res_kernel_content.content | b64decode

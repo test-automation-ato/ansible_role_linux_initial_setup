@@ -1,0 +1,123 @@
+---
+- name: Start firewalld.service
+  ansible.builtin.systemd_service:
+    name: firewalld
+    state: started
+
+- name: "Check current firewall list"
+  ansible.builtin.command: firewall-cmd --list-all
+  register: res_firewall_conf
+  changed_when: false
+  tags: skip_ansible_lint
+
+- name: "Output command [firewall-cmd --list-all]"
+  ansible.builtin.debug:
+    var: res_firewall_conf.stdout
+
+## ansible.posix.firewalldはpython3.11ではそのままでは利用できないため、OSデフォルトのpython3をインタープリターに指定する
+- name: Add interfaces
+  ansible.posix.firewalld:
+    zone: "{{ item.0.zone }}"
+    interface: "{{ item.1 }}"
+    state: enabled
+    permanent: true
+    immediate: true
+  with_subelements:
+    - "{{ linux_initial_setup_firewall_param }}"
+    - interfaces
+  vars:
+    ansible_python_interpreter: /usr/libexec/platform-python
+
+- name: Add services
+  ansible.posix.firewalld:
+    zone: "{{ item.0.zone }}"
+    service: "{{ item.1 }}"
+    state: enabled
+    permanent: true
+    immediate: true
+  with_subelements:
+    - "{{ linux_initial_setup_firewall_param }}"
+    - add_services
+  vars:
+    ansible_python_interpreter: /usr/libexec/platform-python
+
+- name: Remove services
+  ansible.posix.firewalld:
+    zone: "{{ item.0.zone }}"
+    service: "{{ item.1 }}"
+    state: disabled
+    permanent: true
+    immediate: true
+  with_subelements:
+    - "{{ linux_initial_setup_firewall_param }}"
+    - remove_services
+  vars:
+    ansible_python_interpreter: /usr/libexec/platform-python
+
+# test
+- name: Test block
+  tags:
+    - check_firewalld
+    - check_all
+    - never
+  block:
+    - name: Verify interfaces
+      ansible.builtin.command: firewall-cmd --zone={{ item.zone }} --list-interfaces
+      register: res_interfaces_output
+      changed_when: false
+      with_items: "{{ linux_initial_setup_firewall_param }}"
+
+    - name: Check interfaces
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - "res_interfaces_output.results[item_index].stdout.split() | intersect(item.interfaces | flatten) | length \
+            == (item.interfaces | flatten) | length"
+        msg: "Interfaces for zone {{ item.zone }} do not match"
+      with_items: "{{ linux_initial_setup_firewall_param }}"
+      loop_control:
+        index_var: item_index
+
+    - name: Verify added services
+      ansible.builtin.command: firewall-cmd --zone={{ item.zone }} --list-services
+      register: res_services_output
+      changed_when: false
+      with_items: "{{ linux_initial_setup_firewall_param }}"
+
+    - name: Check added services
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - "res_services_output.results[item_index].stdout.split() | sort\
+            == item.add_services | sort"
+        msg: "Added services for zone {{ item.zone }} do not match"
+      with_items: "{{ linux_initial_setup_firewall_param }}"
+      loop_control:
+        index_var: item_index
+
+    - name: Check removed services
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - res_services_output.results[item_index].stdout.split() | intersect(item.remove_services) | length == 0
+        msg: "Removed services for zone {{ item.zone }} are still present"
+      with_items: "{{ linux_initial_setup_firewall_param }}"
+      loop_control:
+        index_var: item_index
+
+# output
+- name: Output block
+  tags:
+    - output_firewalld
+    - output_all
+    - never
+  block:
+    - name: "Check current firewall list"
+      ansible.builtin.command: firewall-cmd --list-all
+      register: res_firewall_conf
+      changed_when: false
+      tags: skip_ansible_lint
+
+    - name: "Output command [firewall-cmd --list-all]"
+      ansible.builtin.debug:
+        var: res_firewall_conf.stdout

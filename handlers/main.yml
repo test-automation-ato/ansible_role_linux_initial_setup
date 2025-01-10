@@ -1,0 +1,34 @@
+---
+- name: Restart sshd
+  ansible.builtin.systemd_service:
+    name: sshd
+    state: restarted
+
+- name: Restart rsyslog
+  ansible.builtin.systemd_service:
+    name: rsyslog
+    state: restarted
+
+- name: Restart systemd-journald
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted
+
+- name: Restart chronyd
+  ansible.builtin.systemd_service:
+    name: chronyd
+    state: restarted
+
+- name: Restart crond
+  ansible.builtin.systemd_service:
+    name: crond
+    state: restarted
+
+- name: Reload networkmanager
+  ansible.builtin.systemd_service:
+    name: NetworkManager
+    state: reloaded
+
+- name: Reboot server
+  ansible.builtin.reboot:
+    reboot_timeout: 600

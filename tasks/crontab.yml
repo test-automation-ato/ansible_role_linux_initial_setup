@@ -1,0 +1,50 @@
+---
+- name: Copy crontab
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_crontab_src }}"
+    dest: "/etc/crontab"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+    validate: "crontab -u root %s"
+  notify: Restart crond
+
+# test
+- name: Test blcok
+  tags:
+    - check_crontab
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of /etc/crontab
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_crontab_src }}"
+        dest: "/etc/crontab"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_dry_run_copy_crontab
+
+    - name: "Check /etc/crontab"
+      ansible.builtin.assert:
+        that:
+          - "res_dry_run_copy_crontab.changed | bool == 0"
+        msg: "/etc/crontab is differ from templates. \
+              {{ res_dry_run_copy_crontab.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_crontab
+    - output_all
+    - never
+  block:
+    - name: "Read /etc/crontab"
+      ansible.builtin.slurp:
+        src: "/etc/crontab"
+      register: res_crontab
+
+    - name: "Output /etc/crontab"
+      ansible.builtin.debug:
+        var: res_crontab.content | b64decode

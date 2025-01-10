@@ -1,0 +1,400 @@
+---
+- name: Validate rhsm parameter
+  tags:
+    - rhsm
+  block:
+    - name: Check if rhsm.conf exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_rhsm_conf_src }}"
+      register: res_rhsm_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the rhsm.conf exists
+      ansible.builtin.assert:
+        that:
+          - res_rhsm_file.stat.exists
+        fail_msg: "The specified rhsm.conf does not exist: {{ linux_initial_setup_rhsm_conf_src }}"
+
+- name: Validate dnf parameter
+  tags:
+    - dnf
+  block:
+    - name: Get /etc/redhat-release
+      ansible.builtin.slurp:
+        src: /etc/redhat-release
+      register: res_redhat_release
+
+    - name: Check is linux_initial_setup_dnf_releasever is correct version
+      ansible.builtin.assert:
+        that:
+          - linux_initial_setup_dnf_releasever in res_redhat_release.content | b64decode
+        fail_msg: "linux_initial_setup_dnf_releasever is not correct version"
+
+    - name: Check if the dnf packages file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_dnf_packages_file }}"
+      register: res_dnf_packages_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the dnf package file exists
+      ansible.builtin.assert:
+        that:
+          - res_dnf_packages_file.stat.exists
+        fail_msg: "The specified dnf packages file does not exist: {{ linux_initial_setup_dnf_packages_file }}"
+
+- name: Validate locale parameter
+  tags:
+    - locale
+  block:
+    - name: Check if linux_initial_setup_timezone is valid
+      ansible.builtin.assert:
+        that:
+          - linux_initial_setup_timezone is match('^[A-Za-z_]+/[A-Za-z_]+$')
+
+    - name: Get available locales
+      ansible.builtin.command: localectl list-locales
+      changed_when: false
+      register: res_available_locales
+
+    - name: Get available keymaps
+      ansible.builtin.command: localectl list-keymaps
+      changed_when: false
+      register: res_available_keymaps
+    # dnf.ymlにて日本語ロケールインストール前は`localtectl list-locales`の結果にja_JP.UTF-8が存在しないことがあるが、
+    # dnf.ymlは日本語ロケールインストールを包含しているため、"ja_JP.UTF-8"が設定値に指定されている場合はチェックOKとする。
+    - name: Validate locale
+      ansible.builtin.assert:
+        that:
+          - "linux_initial_setup_locale in res_available_locales.stdout_lines or linux_initial_setup_locale == 'ja_JP.UTF-8'"
+        fail_msg: "[Worning] Invalid locale '{{ linux_initial_setup_locale }}'provided."
+
+    - name: Validate keymap
+      ansible.builtin.assert:
+        that:
+          - "linux_initial_setup_keymap in res_available_keymaps.stdout_lines"
+        fail_msg: "Invalid keymap '{{ linux_initial_setup_keymap }}' provided."
+
+    - name: Validate x11_keymap
+      ansible.builtin.assert:
+        that:
+          - "linux_initial_setup_x11_keymap in res_available_keymaps.stdout_lines"
+        fail_msg: "Invalid x11-keymap '{{ linux_initial_setup_x11_keymap }}' provided."
+
+- name: Validate kdump parameter
+  tags:
+    - kdump
+  block:
+    - name: Check if SWAP Partition exists
+      ansible.builtin.shell: lsblk -f | grep swap | awk '{print $4}'
+      register: res_swap_uuid
+      changed_when: false
+      failed_when: false
+      tags: skip_ansible_lint
+      when: ansible_facts['distribution_major_version'] == '9'
+
+    - name: Assert SWAP Partition exists
+      ansible.builtin.assert:
+        that:
+          - res_swap_uuid.stdout | length > 0
+        fail_msg: "swap partition not found"
+      when: ansible_facts['distribution_major_version'] == '9'
+
+    - name: Check if the kdump file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_kdump_conf_src }}"
+      register: res_kdump_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the kdump file exists
+      ansible.builtin.assert:
+        that:
+          - res_kdump_file.stat.exists
+        fail_msg: "The specified kdump file does not exist: {{ linux_initial_setup_kdump_conf_src }}"
+
+- name: Validate services parameter
+  tags:
+    - services
+  block:
+    - name: Validate enabled services is a list
+      ansible.builtin.assert:
+        that:
+          - "linux_initial_setup_enabled_services is iterable"
+        fail_msg: "The variable 'linux_initial_setup_enabled_services' is not a list."
+
+    - name: Validate disabled services is a list
+      ansible.builtin.assert:
+        that:
+          - "linux_initial_setup_disabled_services is iterable"
+        fail_msg: "The variable 'linux_initial_setup_disabled_services' is not a list."
+
+- name: Validate kernel parameter
+  tags:
+    - kernel
+  block:
+    - name: Read kernel settings file
+      ansible.builtin.slurp:
+        src: "{{ linux_initial_setup_kernel_conf_src }}"
+      register: res_kernel_conf
+      delegate_to: localhost
+      become: false
+
+    - name: Set kernel settings lines
+      ansible.builtin.set_fact:
+        __kernel_settings_lines: "{{ res_kernel_conf.content | b64decode | split('\n') }}"
+
+    - name: Filter out empty lines and comments
+      ansible.builtin.set_fact:
+        __kernel_settings_lines: "{{ __kernel_settings_lines | select('match', '^[^#].+$') | list }}"
+
+    - name: Check each kernel setting line format
+      ansible.builtin.assert:
+        that:
+          - item is match('^[a-zA-Z0-9._]+ = [0-9]+$')
+        fail_msg: "One or more kernel settings are not in the correct format: {{ item }}"
+      loop: "{{ __kernel_settings_lines }}"
+
+- name: Validate systemd parameter
+  tags:
+    - systemd
+  block:
+    - name: Check if the system.conf file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_system_conf_src }}"
+      register: res_systemd_conf_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the system.conf file exists
+      ansible.builtin.assert:
+        that:
+          - res_systemd_conf_file.stat.exists
+        fail_msg: "The specified system.conf file does not exist: {{ linux_initial_setup_system_conf_src }}"
+
+- name: Validate hostname parameter
+  tags:
+    - hostname
+  block:
+    - name: Validate linux_initial_setup_hostname variable
+      ansible.builtin.assert:
+        that:
+          - linux_initial_setup_hostname is match("^[a-zA-Z0-9-]+$")
+        fail_msg: "The linux_initial_setup_hostname variable must contain only letters, numbers, and hyphens"
+        success_msg: "linux_initial_setup_hostname variable is valid"
+
+- name: Validate sshd parameter
+  tags:
+    - sshd
+  block:
+    - name: Check if the sshd_config file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_sshd_conf_src }}"
+      register: res_sshd_conf_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the sshd_config file exists
+      ansible.builtin.assert:
+        that:
+          - res_sshd_conf_file.stat.exists
+        fail_msg: "The specified sshd_config file does not exist: {{ linux_initial_setup_sshd_conf_src }}"
+
+- name: Validate rsyslog parameter
+  tags:
+    - rsyslog
+  block:
+    - name: Check if the rsyslog.conf file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_rsyslog_conf_src }}"
+      register: res_rsyslog_conf_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the rsyslog.conf file exists
+      ansible.builtin.assert:
+        that:
+          - res_rsyslog_conf_file.stat.exists
+        fail_msg: "The specified rsyslog.conf file does not exist: {{ linux_initial_setup_rsyslog_conf_src }}"
+
+    - name: Check if the journald.conf file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_journald_conf_src }}"
+      register: res_journald_conf_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the journald.conf file exists
+      ansible.builtin.assert:
+        that:
+          - res_journald_conf_file.stat.exists
+        fail_msg: "The specified journald.conf file does not exist: {{ linux_initial_setup_journald_conf_src }}"
+
+- name: Validate firewalld parameter
+  tags:
+    - firewalld
+  block:
+    - name: Validate firewall variables are list
+      ansible.builtin.assert:
+        that:
+          - "linux_initial_setup_firewall_param is iterable"
+          - "item.interfaces is iterable"
+          - "item.add_services is iterable"
+          - "item.remove_services is iterable"
+        fail_msg: "The variable 'linux_initial_setup_firewall_***' is not a list."
+      loop: "{{ linux_initial_setup_firewall_param }}"
+
+- name: Validate logrotate parameter
+  tags:
+    - logrotate
+  block:
+    - name: Check if the logrotate.conf file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_logrotate_conf_src }}"
+      register: res_logrotate_conf_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the logrotate.conf file exists
+      ansible.builtin.assert:
+        that:
+          - res_logrotate_conf_file.stat.exists
+        fail_msg: "The specified logrotate.conf file does not exist: {{ linux_initial_setup_logrotate_conf_src }}"
+
+    - name: Validate logrotate list is a list
+      ansible.builtin.assert:
+        that:
+          - "linux_initial_setup_logrotate_d_conf_src_list is iterable"
+        fail_msg: "The variable 'linux_initial_setup_logrotate_d_conf_src_list' is not a list."
+
+    - name: Check if the logrotate/*.conf files exists
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: res_loglotate_d_conf_files
+      delegate_to: localhost
+      become: false
+      loop: "{{ linux_initial_setup_logrotate_d_conf_src_list }}"
+
+    - name: Assert that the logrotate/*.conf files exists
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+        fail_msg: "The specified system.conf file does not exist: {{ item.stat.path }}"
+      loop: "{{ res_loglotate_d_conf_files.results }}"
+
+- name: Validate crontab parameter
+  tags:
+    - crontab
+  block:
+    - name: Check if the crontab file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_crontab_src }}"
+      register: res_crontab_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the crontab file exists
+      ansible.builtin.assert:
+        that:
+          - res_crontab_file.stat.exists
+        fail_msg: "The specified crontab file does not exist: {{ linux_initial_setup_crontab_src }}"
+
+- name: Validate vmtool parameter
+  tags:
+    - vmtool
+  block:
+    - name: Check if the vmtool file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_vmware_tools_src }}"
+      register: res_vmtool_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the vmtool file exists
+      ansible.builtin.assert:
+        that:
+          - res_vmtool_file.stat.exists
+        fail_msg: "The specified vmtool file does not exist: {{ linux_initial_setup_vmware_tools_src }}"
+
+- name: Validate dns parameter
+  tags:
+    - dns
+  block:
+    - name: Check if the 90-dns-none.conf file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_networkmanager_conf_src }}"
+      register: res_networkmanager_conf_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the 90-dns-none.conf file exists
+      ansible.builtin.assert:
+        that:
+          - res_networkmanager_conf_file.stat.exists
+        fail_msg: "The specified 90-dns-none.conf file does not exist: {{ linux_initial_setup_networkmanager_conf_src }}"
+
+    - name: Check if the resolv.conf file exists
+      ansible.builtin.stat:
+        path: "{{ linux_initial_setup_resolv_conf_src }}"
+      register: res_resolv_conf_file
+      delegate_to: localhost
+      become: false
+
+    - name: Assert that the resolv.conf file exists
+      ansible.builtin.assert:
+        that:
+          - res_resolv_conf_file.stat.exists
+        fail_msg: "The specified resolv.conf file does not exist: {{ linux_initial_setup_resolv_conf_src }}"
+
+- name: Validate users parameter
+  tags:
+    - users
+  block:
+    - name: Check if UID is already in use
+      ansible.builtin.command: getent passwd {{ item.id }}
+      register: res_uid_check
+      changed_when: false
+      failed_when: false
+      loop: "{{ linux_initial_setup_desired_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Assert that UID is not in use by another user
+      ansible.builtin.assert:
+        that:
+          - item.stdout == "" or item.stdout.split(':')[0] == item.item.name
+        fail_msg: "UID {{ item.item.id }} is already in use by another user"
+      loop: "{{ res_uid_check.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Check if GID is already in use
+      ansible.builtin.command: getent group {{ item.id }}
+      register: res_gid_check
+      loop: "{{ linux_initial_setup_desired_groups }}"
+      changed_when: false
+      failed_when: false
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Assert that GID is not in use by another group
+      ansible.builtin.assert:
+        that:
+          - item.stdout == "" or item.stdout.split(':')[0] == item.item.name
+        fail_msg: "GID {{ item.item.id }} is already in use by another group"
+      loop: "{{ res_gid_check.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+- name: Validate selinux parameter
+  tags:
+    - selinux
+  block:
+    - name: Validate linux_initial_setup_selinux_state variable
+      ansible.builtin.assert:
+        that:
+          - linux_initial_setup_selinux_state in ["disabled", "permissive", "enforcing"]
+        fail_msg: "Invalid value for linux_initial_setup_selinux_state. \
+                   Allowed values are 'disabled', 'permissive', or 'enforcing'."
+        success_msg: "linux_initial_setup_selinux_state variable is valid"

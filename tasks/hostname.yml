@@ -1,0 +1,59 @@
+---
+- name: "Check current hostname"
+  ansible.builtin.command: uname -a
+  register: res_uname
+  changed_when: false
+
+- name: "Output command [uname -a]"
+  ansible.builtin.debug:
+    var: res_uname.stdout
+
+- name: Set hostname on the target OS
+  ansible.builtin.hostname:
+    name: "{{ linux_initial_setup_hostname }}"
+    use: systemd
+
+# test
+- name: Test block
+  tags:
+    - check_hostname
+    - check_all
+    - never
+  block:
+    - name: Get the current hostname
+      ansible.builtin.command: hostname
+      register: current_hostname
+      changed_when: false
+
+    - name: Check if the hostname is correct
+      ansible.builtin.assert:
+        that:
+          - current_hostname.stdout == linux_initial_setup_hostname
+        fail_msg: "The hostname is not as expected. Current: {{ current_hostname.stdout }}, \
+                   Expected: {{ linux_initial_setup_hostname }}"
+        success_msg: "The hostname is as expected: {{ linux_initial_setup_hostname }}"
+
+# output
+- name: Output block
+  tags:
+    - output_hostname
+    - output_all
+    - never
+  block:
+    - name: "Command [uname -a]"
+      ansible.builtin.command: uname -a
+      register: res_uname
+      changed_when: false
+
+    - name: "Output command [uname -a]"
+      ansible.builtin.debug:
+        var: res_uname.stdout
+
+    - name: Read /etc/hostname
+      ansible.builtin.slurp:
+        src: /etc/hostname
+      register: res_hostname
+
+    - name: Output /etc/hostname
+      ansible.builtin.debug:
+        var: res_hostname.content | b64decode

@@ -1,0 +1,146 @@
+---
+# rhsm
+linux_initial_setup_rhsm_conf_src: "{{ role_path }}/files/rhel9/rhsm/it_rhsm.conf"
+
+# dnf
+linux_initial_setup_dnf_releasever: "9.4"
+linux_initial_setup_dnf_proxy: "http://nhkproxy.nhk.or.jp:8080"
+linux_initial_setup_dnf_packages_file: "{{ role_path }}/files/rhel9/dnf/rhel94_packages.yml"
+
+# locale
+linux_initial_setup_locale: "ja_JP.UTF-8"
+linux_initial_setup_timezone: "Asia/Tokyo"
+linux_initial_setup_keymap: "jp"
+linux_initial_setup_x11_keymap: "jp"
+
+# kdump
+linux_initial_setup_kdump_conf_src: "{{ role_path }}/files/rhel9/kdump/kdump.conf"
+
+# services
+linux_initial_setup_enabled_services:
+  - auditd.service
+  - chronyd.service
+  - crond.service
+  - dbus-broker.service
+  - firewalld.service
+  - getty@.service
+  - irqbalance.service
+  - kdump.service
+  - lvm2-monitor.service
+  - NetworkManager-dispatcher.service
+  - NetworkManager-wait-online.service
+  - NetworkManager.service
+  - nis-domainname.service
+  - rhsmcertd.service
+  - rsyslog.service
+  - selinux-autorelabel-mark.service
+  - sshd.service
+  - sssd.service
+  - systemd-network-generator.service
+  - systemd-remount-fs.service
+  - udisks2.service
+  - vgauthd.service
+  - vmtoolsd.service
+
+# serial-getty@: クラウド環境などではindirectになる(getty@tty1などが有効化されている)ためコメントアウト
+linux_initial_setup_disabled_services:
+  - blk-availability.service
+  - chrony-wait.service
+  - console-getty.service
+  - cpupower.service
+  - debug-shell.service
+  - kvm_stat.service
+  - man-db-restart-cache-update.service
+  - mdmonitor.service
+  - microcode.service
+  - nftables.service
+  - rdisc.service
+  - rhsm-facts.service
+  - rhsm.service
+  - rpmdb-rebuild.service
+  # - serial-getty@.service
+  - sshd-keygen@.service
+  - systemd-boot-check-no-failures.service
+  - systemd-boot-update.service
+  - systemd-pstore.service
+  - systemd-sysext.service
+
+# kernel
+linux_initial_setup_kernel_conf_src: "{{ role_path }}/files/rhel9/kernel/sysctl.conf"
+
+# systemd
+linux_initial_setup_system_conf_src: "{{ role_path }}/files/rhel9/systemd/system.conf"
+
+# Hostname
+linux_initial_setup_hostname: "{{ inventory_hostname_short }}"
+
+# ssh
+linux_initial_setup_sshd_conf_src: "{{ role_path }}/files/rhel9/sshd/sshd_config"
+
+# rsyslog
+linux_initial_setup_rsyslog_conf_src: "{{ role_path }}/files/rhel9/rsyslog/rsyslog.conf"
+linux_initial_setup_journald_conf_src: "{{ role_path }}/files/rhel9/rsyslog/journald.conf"
+
+# firewalld
+# linux_initial_setup_firewall_paramはリスト変数であり、複数のzoneの設定が可能
+# 指定可能なパラメタは以下の4つ
+# zone (スカラー)
+# interfaces (リスト)
+# add_services (リスト)
+# remove_services (リスト)
+linux_initial_setup_firewall_param:
+  - zone: public
+    interfaces:
+      - "{{ ansible_interfaces | difference(['lo']) }}"
+    add_services:
+      - ssh
+    remove_services:
+      - cockpit
+      - dhcpv6-client
+
+# logrotate
+linux_initial_setup_logrotate_conf_src: "{{ role_path }}/files/rhel9/logrotate/logrotate.conf"
+linux_initial_setup_logrotate_d_conf_src_list:
+  - "{{ role_path }}/files/rhel9/logrotate/btmp"
+  - "{{ role_path }}/files/rhel9/logrotate/chrony"
+  - "{{ role_path }}/files/rhel9/logrotate/dnf"
+  - "{{ role_path }}/files/rhel9/logrotate/firewalld"
+  - "{{ role_path }}/files/rhel9/logrotate/kvm_stat"
+  - "{{ role_path }}/files/rhel9/logrotate/sssd"
+  - "{{ role_path }}/files/rhel9/logrotate/subscription-manager"
+  - "{{ role_path }}/files/rhel9/logrotate/rsyslog"
+  - "{{ role_path }}/files/rhel9/logrotate/wtmp"
+
+# cron
+linux_initial_setup_crontab_src: "{{ role_path }}/files/rhel9/crontab/crontab"
+
+# vmtool
+linux_initial_setup_vmware_tools_src: "{{ role_path }}/files/rhel9/vmtool/tools.conf"
+
+## ★注意★ ロケーション差異あり
+# dns
+linux_initial_setup_resolv_conf_src: "{{ role_path }}/files/rhel9/dns/info_it_resolv.conf"
+linux_initial_setup_networkmanager_conf_src: "{{ role_path }}/files/rhel9/dns/90-dns-none.conf"
+
+## ★注意★ ロケーション差異あり
+# chronyd
+linux_initial_setup_chrony_conf_src: "{{ role_path }}/files/rhel9/chronyd/info_it_chrony.conf"
+linux_initial_setup_chrony_chronyd_src: "{{ role_path }}/files/rhel9/chronyd/chronyd"
+
+# group
+linux_initial_setup_desired_groups:
+  - name: nws
+    id: 5000
+
+# user
+linux_initial_setup_desired_users:
+  - name: nwsadmin
+    group: nws
+    id: 5000
+
+# sudoers
+linux_initial_setup_desired_sudo_users:
+  - nwsadmin
+
+# Selinux
+linux_initial_setup_selinux_state: "disabled"

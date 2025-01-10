@@ -1,0 +1,48 @@
+---
+- name: Copy rhsm.conf
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_rhsm_conf_src }}"
+    dest: "/etc/rhsm/rhsm.conf"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+
+# test
+- name: Test block
+  tags:
+    - check_rhsm
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of rhsm.conf
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_rhsm_conf_src }}"
+        dest: "/etc/rhsm/rhsm.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_rhsm_conf_copy
+
+    - name: "Check /etc/rhsm/rhsm.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_rhsm_conf_copy.changed | bool == 0"
+        msg: "rhsm configuration is differ from templates. \
+              {{ res_test_rhsm_conf_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_rhsm
+    - output_all
+    - never
+  block:
+    - name: Read /etc/rhsm/rhsm.conf
+      ansible.builtin.slurp:
+        src: /etc/rhsm/rhsm.conf
+      register: res_rhsm_conf
+
+    - name: Output /etc/rhsm/rhsm.conf(test2)
+      ansible.builtin.debug:
+        var: res_rhsm_conf.content | b64decode | regex_replace('\n', '')

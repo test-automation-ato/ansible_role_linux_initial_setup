@@ -1,0 +1,145 @@
+---
+- name: Copy logrotate.conf
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_logrotate_conf_src }}"
+    dest: "/etc/logrotate.conf"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+    validate: logrotate -d %s
+  register: res_logrotate_copy
+
+# - name: Validate and failback logrotate configuration
+#   when: res_logrotate_copy.changed
+#   block:
+#     - name: Validate logrotate configuration
+#       ansible.builtin.command:
+#         cmd: logrotate -d /etc/logrotate.conf
+#       register: res_logrotate_check
+#       changed_when: false
+#       failed_when: res_logrotate_check.rc != 0
+
+#   rescue:
+#     - name: Restore the backup if validation fails
+#       ansible.builtin.copy:
+#         src: "{{ res_logrotate_copy.backup_file }}"
+#         dest: /etc/logrotate.conf
+#         mode: "0644"
+#         remote_src: true
+
+- name: Check diff logrotate.d configuration files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/logrotate.d/{{ item | basename }}"
+    mode: "0644"
+  loop: "{{ linux_initial_setup_logrotate_d_conf_src_list }}"
+  check_mode: true
+  register: res_dry_run_copy_logrotate_d
+
+- name: Create backup & Copy /etc/logrotate.d/*
+  when: "'True' in res_dry_run_copy_logrotate_d.results | map(attribute='changed') | join(' ')"
+  block:
+    - name: Set backup timestamp
+      ansible.builtin.set_fact:
+        __backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+
+    - name: Copy /etc/logrotate.d to backup directory if changes are detected
+      ansible.builtin.copy:
+        src: /etc/logrotate.d/
+        dest: "/etc/logrotate.d_{{ __backup_timestamp }}/"
+        remote_src: true
+        mode: preserve
+
+    - name: Copy logrotate_d configuration files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/etc/logrotate.d/{{ item | basename }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ linux_initial_setup_logrotate_d_conf_src_list }}"
+
+    - name: Validate and failback logrotate_d configurations
+      block:
+        - name: Validate logrotate_d configurations
+          ansible.builtin.command:
+            cmd: logrotate -d /etc/logrotate.conf
+          register: res_logrotate_d_check
+          changed_when: false
+          failed_when: res_logrotate_d_check.rc != 0
+
+      rescue:
+        - name: Restore the backup if validation fails
+          ansible.builtin.copy:
+            src: "etc/logrotate.d_{{ __backup_timestamp }}/"
+            dest: /etc/logrotate.d/
+            mode: "0644"
+            remote_src: true
+
+# test
+- name: Test blcok
+  tags:
+    - check_logrotate
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of /etc/logrotate.conf
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_logrotate_conf_src }}"
+        dest: "/etc/logrotate.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_logrotate_conf_copy
+
+    - name: "Check /etc/logrotate.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_logrotate_conf_copy.changed | bool == 0"
+        msg: "logrotate.conf is differ from templates. \
+              {{ res_test_logrotate_conf_copy.diff | default('') }}"
+
+    - name: Dry-run copy of logrotate_d configuration files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/etc/logrotate.d/{{ item | basename }}"
+        mode: "0644"
+      loop: "{{ linux_initial_setup_logrotate_d_conf_src_list }}"
+      check_mode: true
+      diff: true
+      register: res_dry_run_copy_logrotate_d
+
+    - name: "Check /etc/logrotate.d/"
+      ansible.builtin.assert:
+        that:
+          - "item.changed | bool == 0"
+        msg: "logrotate configuration is differ from templates. {{ item.diff | default('') }}"
+      loop: "{{ res_dry_run_copy_logrotate_d.results }}"
+
+# output
+- name: Output block
+  tags:
+    - output_logrotate
+    - output_all
+    - never
+  block:
+    - name: "Read /etc/logrotate.conf"
+      ansible.builtin.slurp:
+        src: "/etc/logrotate.conf"
+      register: res_logrotate_conf
+
+    - name: "Output /etc/logrotate.conf"
+      ansible.builtin.debug:
+        var: res_logrotate_conf.content | b64decode
+
+    - name: "Read /etc/logrotate.d/*"
+      ansible.builtin.slurp:
+        src: "/etc/logrotate.d/{{ item | basename }}"
+      register: res_logrotate_content_list
+      loop: "{{ linux_initial_setup_logrotate_d_conf_src_list }}"
+
+    - name: "Output /etc/logrotate.d/*"
+      ansible.builtin.debug:
+        var: item.content | b64decode
+      loop: "{{ res_logrotate_content_list.results }}"

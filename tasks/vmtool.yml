@@ -1,0 +1,56 @@
+---
+- name: Create vmware-tools directory
+  ansible.builtin.file:
+    path: "/etc/vmware-tools"
+    owner: root
+    group: root
+    mode: "0755"
+    state: directory
+
+- name: Copy VMware-Tools
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_vmware_tools_src }}"
+    dest: "/etc/vmware-tools/tools.conf"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+
+# test
+- name: Test block
+  tags:
+    - check_vmtool
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of vmtool configuration files
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_vmware_tools_src }}"
+        dest: "/etc/vmware-tools/tools.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_tools_conf_copy
+
+    - name: "Check /etc/vmware-tools/tools.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_tools_conf_copy.changed | bool == 0"
+        msg: "vmtool configuration is differ from templates. \
+              {{ res_test_tools_conf_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_vmtool
+    - output_all
+    - never
+  block:
+    - name: Read /etc/vmware-tools/tools.conf
+      ansible.builtin.slurp:
+        src: /etc/vmware-tools/tools.conf
+      register: res_vmtool_conf
+
+    - name: Output /etc/vmware-tools/tools.conf
+      ansible.builtin.debug:
+        var: res_vmtool_conf.content | b64decode

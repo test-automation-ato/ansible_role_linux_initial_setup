@@ -1,0 +1,134 @@
+---
+- name: Fixing minor version (/etc/dnf/vars/releasever)
+  ansible.builtin.copy:
+    content: "{{ linux_initial_setup_dnf_releasever }}"
+    dest: "/etc/dnf/vars/releasever"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+
+- name: Setting Proxy (/etc/dnf/dnf.conf)
+  ansible.builtin.lineinfile:
+    path: "/etc/dnf/dnf.conf"
+    regexp: "^proxy="
+    line: "proxy={{ linux_initial_setup_dnf_proxy }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  when: linux_initial_setup_dnf_proxy | length > 0
+
+- name: Read dnf packages list
+  ansible.builtin.include_vars:
+    file: "{{ linux_initial_setup_dnf_packages_file }}"
+
+# 次のタスク「Add exclusion for kernel and redhat-release packages」により、
+# インストールできるパッケージが制限されるため、
+# 2回目以降の実行において、kernelおよびredhat-releaseで始まるパッケージのアップデートは失敗する。
+# これらのアップデートを実行する場合はlinux_initial_setup_dnf_excludesをfalseに設定して実行することで、制限を無効化できる。
+- name: Install packages
+  ansible.builtin.dnf:
+    name: "{{ __dnf_packages_list }}"
+    state: present
+    disable_excludes: "{{ 'all' if not linux_initial_setup_dnf_excludes | bool else omit }}"
+    allow_downgrade: true
+
+- name: Add exclusion for kernel and redhat-release packages
+  ansible.builtin.lineinfile:
+    path: "/etc/dnf/dnf.conf"
+    regexp: "^excludepkgs="
+    line: "excludepkgs=kernel*,redhat-release*"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+
+# test
+- name: Test block
+  tags:
+    - check_dnf
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of /etc/dnf/vars/releasever
+      ansible.builtin.copy:
+        content: "{{ linux_initial_setup_dnf_releasever }}"
+        dest: "/etc/dnf/vars/releasever"
+        owner: root
+        group: root
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_releasever_copy
+
+    - name: "Check /etc/dnf/vars/releasever"
+      ansible.builtin.assert:
+        that:
+          - "res_test_releasever_copy.changed | bool == 0"
+        msg: "/etc/dnf/vars/releasever is differ from templates. \
+              {{ res_test_releasever_copy.diff | default('') }}"
+
+    - name: Check for proxy setting in dnf.conf
+      ansible.builtin.wait_for:
+        path: "/etc/dnf/dnf.conf"
+        search_regex: "^proxy={{ linux_initial_setup_dnf_proxy }}"
+        timeout: 3
+      when: linux_initial_setup_dnf_proxy | length > 0
+
+    - name: Check for kernel and redhat-release exclusions in dnf.conf
+      ansible.builtin.wait_for:
+        path: "/etc/dnf/dnf.conf"
+        search_regex: '^excludepkgs=kernel\*,redhat-release\*'
+        timeout: 3
+
+    - name: Get installed packages list
+      ansible.builtin.command: "rpm -qa"
+      register: res_installed_packages
+      changed_when: false
+      tags: skip_ansible_lint
+
+    - name: Read dnf packages list
+      ansible.builtin.include_vars:
+        file: "{{ linux_initial_setup_dnf_packages_file }}"
+
+    - name: Check if required packages are installed
+      ansible.builtin.assert:
+        that:
+          - item in res_installed_packages.stdout_lines
+        fail_msg: "The following package is not installed: {{ item }}"
+      loop: "{{ __dnf_packages_list }}"
+
+# output
+- name: Output block
+  tags:
+    - output_dnf
+    - output_all
+    - never
+  block:
+    - name: Read /etc/dnf/dnf.conf
+      ansible.builtin.slurp:
+        src: /etc/dnf/dnf.conf
+      register: res_dnf_conf
+
+    - name: Output /etc/dnf/dnf.conf
+      ansible.builtin.debug:
+        var: res_dnf_conf.content | b64decode
+
+    - name: Read /etc/dnf/vars/releasever
+      ansible.builtin.slurp:
+        src: /etc/dnf/vars/releasever
+      register: res_dnf_releasever
+
+    - name: Output /etc/dnf/vars/releasever
+      ansible.builtin.debug:
+        var: res_dnf_releasever.content | b64decode
+
+    - name: Command [dnf list installed]"
+      ansible.builtin.command: "dnf list installed"
+      register: res_installed_packages
+      changed_when: false
+
+    - name: "Output command [dnf list installed]"
+      ansible.builtin.debug:
+        var: res_installed_packages.stdout_lines

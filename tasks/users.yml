@@ -1,0 +1,127 @@
+---
+- name: Create groups
+  ansible.builtin.group:
+    name: "{{ item.name }}"
+    gid: "{{ item.id }}"
+    state: present
+  loop: "{{ linux_initial_setup_desired_groups }}"
+  when: linux_initial_setup_desired_groups | length > 0
+
+# 追加対象のユーザーはパスワード設定もしくは鍵設定が必要だが、要件確認
+- name: Create users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    uid: "{{ item.id }}"
+    group: "{{ item.group }}"
+    # password: "{{ linux_initial_setup_user_pass | password_hash('sha512') }}"
+    # update_password: on_create
+    state: present
+  loop: "{{ linux_initial_setup_desired_users }}"
+  when: linux_initial_setup_desired_users | length > 0
+
+- name: Add sudoers.d file
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/10-nws-config"
+    content: |
+      {% for user in linux_initial_setup_desired_sudo_users %}
+      {{ user }} ALL=(ALL) NOPASSWD:ALL
+      {% endfor %}
+    owner: root
+    group: root
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
+  when: linux_initial_setup_desired_sudo_users | length > 0
+
+# test
+- name: Test block
+  tags:
+    - check_users
+    - check_all
+    - never
+  block:
+    - name: Check groups
+      ansible.builtin.wait_for:
+        path: "/etc/group"
+        search_regex: "^{{ item.name }}:x:{{ item.id }}"
+        state: present
+        timeout: 3
+      loop: "{{ linux_initial_setup_desired_groups }}"
+      when: linux_initial_setup_desired_groups | length > 0
+
+    - name: Check users
+      ansible.builtin.wait_for:
+        path: "/etc/passwd"
+        search_regex: "^{{ item.name }}:x:{{ item.id }}"
+        state: present
+        timeout: 3
+      loop: "{{ linux_initial_setup_desired_users }}"
+      when: linux_initial_setup_desired_users | length > 0
+
+    - name: Gather current user's primary group
+      ansible.builtin.command: "id {{ item.name }}"
+      changed_when: false
+      loop: "{{ linux_initial_setup_desired_users }}"
+      register: res_id
+
+    - name: Check if user belongs to the correct primary group
+      ansible.builtin.assert:
+        that:
+          # res_idの結果に"uid=5000(nwsadmin) gid=5000(nws)"の形式でprimary groupの名前が入っていることを確認
+          - "res_id.results | string is search('uid=' + item.id \
+             | string + '\\(' + item.name + '\\) gid=.*\\(' + item.group + '\\)')"
+        fail_msg: "{{ item.name }} is not in the correct primary group."
+      loop: "{{ linux_initial_setup_desired_users }}"
+
+    - name: Check if sudoers is correctly set in /etc/sudoers.d/10-nws-config
+      ansible.builtin.wait_for:
+        path: /etc/sudoers.d/10-nws-config
+        search_regex: '{{ item }} ALL=\(ALL\) NOPASSWD:ALL'
+        timeout: 3
+      loop: "{{ linux_initial_setup_desired_sudo_users }}"
+      when: linux_initial_setup_desired_sudo_users | length > 0
+
+# output
+- name: Output block
+  tags:
+    - output_users
+    - output_all
+    - never
+  block:
+    - name: Get id command
+      ansible.builtin.command: "id {{ item.name }}"
+      changed_when: false
+      loop: "{{ linux_initial_setup_desired_users }}"
+      register: res_id_output
+
+    - name: Output ic command
+      ansible.builtin.debug:
+        var: res_id_output.results| map(attribute='stdout')
+
+    - name: Read /etc/group
+      ansible.builtin.slurp:
+        src: /etc/group
+      register: res_group
+
+    - name: Output /etc/group
+      ansible.builtin.debug:
+        var: res_group.content | b64decode
+
+    - name: Read /etc/passwd
+      ansible.builtin.slurp:
+        src: /etc/passwd
+      register: res_users
+
+    - name: Output /etc/passwd
+      ansible.builtin.debug:
+        var: res_users.content | b64decode
+
+    - name: Read /etc/sudoers.d/10-nws-config
+      ansible.builtin.slurp:
+        src: /etc/sudoers.d/10-nws-config
+      register: res_sudoers
+      when: linux_initial_setup_desired_sudo_users | length > 0
+
+    - name: Output /etc/sudoers.d/10-nws-config
+      ansible.builtin.debug:
+        var: res_sudoers.content | b64decode
+      when: linux_initial_setup_desired_sudo_users | length > 0

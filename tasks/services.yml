@@ -1,0 +1,88 @@
+---
+- name: Ensure systemd services are enabled
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+  loop: "{{ linux_initial_setup_enabled_services }}"
+  when: linux_initial_setup_enabled_services | length > 0
+
+- name: Ensure systemd services are disabled
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+  loop: "{{ linux_initial_setup_disabled_services }}"
+  when: linux_initial_setup_disabled_services | length > 0
+
+# test
+- name: Test block
+  tags:
+    - check_services
+    - check_all
+    - never
+  block:
+    - name: Check enabled services
+      ansible.builtin.command:
+        cmd: "systemctl is-enabled {{ item }}"
+      loop: "{{ linux_initial_setup_enabled_services }}"
+      register: res_enabled_services_status
+      changed_when: false
+      failed_when: false
+      tags: skip_ansible_lint
+
+    - name: Fail if any enabled service is not in the expected state
+      ansible.builtin.assert:
+        that: "'enabled' in item.stdout"
+        fail_msg: "Service {{ item.item }} is not enabled"
+      loop: "{{ res_enabled_services_status.results }}"
+
+    - name: Check disabled services
+      ansible.builtin.command:
+        cmd: "systemctl is-enabled {{ item }}"
+      loop: "{{ linux_initial_setup_disabled_services }}"
+      register: res_disabled_services_status
+      changed_when: false
+      failed_when: false
+      tags: skip_ansible_lint
+
+    - name: Fail if any disabled service is not in the expected state
+      ansible.builtin.assert:
+        that: "item.stdout == 'disabled'"
+        fail_msg: "Service {{ item.item }} is not disabled"
+      loop: "{{ res_disabled_services_status.results }}"
+
+# output
+- name: Output block
+  tags:
+    - output_services
+    - output_all
+    - never
+  block:
+    - name: "Command [systemctl list-unit-files --type=service --state=enabled]"
+      ansible.builtin.command: systemctl list-unit-files --type=service --state=enabled
+      register: res_systemctl_enabled
+      changed_when: false
+      tags: skip_ansible_lint
+
+    - name: "Output command [systemctl list-unit-files --type=service --state=enabled]"
+      ansible.builtin.debug:
+        var: res_systemctl_enabled.stdout
+
+    - name: "Command [systemctl list-unit-files --type=service --state=disabled]"
+      ansible.builtin.command: systemctl list-unit-files --type=service --state=disabled
+      register: res_systemctl_disabled
+      changed_when: false
+      tags: skip_ansible_lint
+
+    - name: "Output command [systemctl list-unit-files --type=service --state=disabled]"
+      ansible.builtin.debug:
+        var: res_systemctl_disabled.stdout
+
+    - name: "Command [systemctl list-unit-files --type=service]"
+      ansible.builtin.command: systemctl list-unit-files --type=service
+      register: res_systemctl_all
+      changed_when: false
+      tags: skip_ansible_lint
+
+    - name: "Output command [systemctl list-unit-files --type=service]"
+      ansible.builtin.debug:
+        var: res_systemctl_all.stdout

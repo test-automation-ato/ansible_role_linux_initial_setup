@@ -1,0 +1,85 @@
+---
+- name: Set timezone to {{ linux_initial_setup_timezone }}
+  community.general.timezone:
+    name: "{{ linux_initial_setup_timezone }}"
+
+- name: Get current locale
+  ansible.builtin.command: localectl status
+  changed_when: false
+  register: res_localectl_status
+
+- name: Setting lang
+  ansible.builtin.command: localectl set-locale LANG="{{ linux_initial_setup_locale }}"
+  changed_when: true
+  when: "'LANG=' + linux_initial_setup_locale not in res_localectl_status.stdout"
+
+- name: Setup keymap
+  ansible.builtin.command: localectl set-keymap "{{ linux_initial_setup_keymap }}"
+  changed_when: true
+  when: "'VC Keymap: ' + linux_initial_setup_keymap not in res_localectl_status.stdout"
+
+- name: Setup x11-keymap
+  ansible.builtin.command: localectl set-x11-keymap "{{ linux_initial_setup_x11_keymap }}"
+  changed_when: true
+  when: "'X11 Layout: ' + linux_initial_setup_x11_keymap not in res_localectl_status.stdout"
+
+# test
+- name: Test block
+  tags:
+    - check_locale
+    - check_all
+    - never
+  block:
+    - name: Check timezone
+      ansible.builtin.command: >
+        bash -c "timedatectl | grep 'Time zone:'"
+      register: res_timezone_check
+      changed_when: false
+      failed_when: false
+
+    - name: Verify timezone is set to Japan
+      ansible.builtin.assert:
+        that:
+          - "linux_initial_setup_timezone in res_timezone_check.stdout"
+        success_msg: "{{ res_timezone_check.stdout }}"
+        fail_msg: "{{ res_timezone_check.stdout }}"
+
+    - name: Check locale
+      ansible.builtin.command: localectl status
+      register: res_locale_check
+      changed_when: false
+      failed_when: false
+
+    - name: Verify locale is set to ja_JP.utf8 and keymap is set to JP
+      ansible.builtin.assert:
+        that:
+          - "'LANG=' + linux_initial_setup_locale in res_locale_check.stdout"
+          - "'Keymap: ' + linux_initial_setup_keymap in res_locale_check.stdout"
+          - "'Layout: ' + linux_initial_setup_x11_keymap in res_locale_check.stdout"
+        success_msg: "{{ res_locale_check.stdout }}"
+        fail_msg: "{{ res_locale_check.stdout }}"
+
+# output
+- name: Output block
+  tags:
+    - output_locale
+    - output_all
+    - never
+  block:
+    - name: "Command [timedatectl]"
+      ansible.builtin.command: timedatectl
+      register: res_timedatectl
+      changed_when: false
+
+    - name: "Output command [timedatectl]"
+      ansible.builtin.debug:
+        var: res_timedatectl.stdout
+
+    - name: Command localectl status
+      ansible.builtin.command: localectl status
+      register: res_localectl
+      changed_when: false
+
+    - name: "Output command [localectl status]"
+      ansible.builtin.debug:
+        var: res_localectl.stdout

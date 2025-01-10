@@ -1,0 +1,110 @@
+---
+- name: Copy chronyd
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_chrony_chronyd_src }}"
+    dest: "/etc/sysconfig/chronyd"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+  register: res_sys_chronyd_copy
+
+- name: Copy chrony.conf
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_chrony_conf_src }}"
+    dest: "/etc/chrony.conf"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+  register: res_chrony_copy
+
+- name: Restart and failback chrony configuration
+  block:
+    - name: Restart chrony
+      ansible.builtin.systemd_service:
+        name: chronyd
+        state: restarted
+      when: res_chrony_copy.changed or res_sys_chronyd_copy.changed
+
+  rescue:
+    - name: Restore the backup if validation fails
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+        remote_src: true
+      loop:
+        - src: "{{ res_chrony_copy.backup_file }}"
+          dest: /etc/chrony.conf
+        - src: "{{ res_sys_chronyd_copy.backup_file }}"
+          dest: /etc/sysconfig/chronyd
+
+    - name: Restart chrony
+      ansible.builtin.systemd_service:
+        name: chrony
+        state: restarted
+
+# test
+- name: Test block
+  tags:
+    - check_chronyd
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of chrony configuration files
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_chrony_conf_src }}"
+        dest: "/etc/chrony.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_chrony_conf_copy
+
+    - name: "Check /etc/chrony.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_chrony_conf_copy.changed | bool == 0"
+        msg: "chrony configuration is differ from templates. \
+              {{ res_test_chrony_conf_copy.diff | default('') }}"
+
+    - name: Dry-run copy of /etc/sysconfig/chronyd
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_chrony_chronyd_src }}"
+        dest: "/etc/sysconfig/chronyd"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_chronyd_copy
+
+    - name: "Check /etc/chrony.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_chronyd_copy.changed | bool == 0"
+        msg: "/etc/sysconfig/chronyd is differ from templates. \
+              {{ res_test_chronyd_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_chronyd
+    - output_all
+    - never
+  block:
+    - name: Read /etc/chrony.conf
+      ansible.builtin.slurp:
+        src: /etc/chrony.conf
+      register: res_chrony_conf
+
+    - name: Output /etc/chrony.conf
+      ansible.builtin.debug:
+        msg: "{{ res_chrony_conf.content | b64decode }}"
+
+    - name: Read /etc/sysconfig/chronyd
+      ansible.builtin.slurp:
+        src: /etc/sysconfig/chronyd
+      register: res_chronyd
+
+    - name: Output /etc/sysconfig/chronyd
+      ansible.builtin.debug:
+        msg: "{{ res_chronyd.content | b64decode }}"

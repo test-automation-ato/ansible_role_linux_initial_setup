@@ -1,0 +1,154 @@
+---
+## /etc/default/grubのGRUB_CMDLINE_LINUXの値にresumeの設定が自動設定されない場合のblock
+- name: Setting hibernation (Add resume option to /etc/default/grub)
+  when: ansible_facts['distribution_major_version'] == '9'
+  block:
+    - name: Get current GRUB_CMDLINE_LINUX value
+      ansible.builtin.shell: grep '^GRUB_CMDLINE_LINUX=' /etc/default/grub  | grep resume
+      register: res_resume_exist
+      changed_when: false
+      failed_when: false
+      tags: skip_ansible_lint
+
+    - name: Get swap partition UUID
+      ansible.builtin.shell: lsblk -f | grep swap | awk '{print $4}'
+      register: res_swap_uuid
+      changed_when: false
+      tags: skip_ansible_lint
+
+    # GRUB_CMDLINE_LINUXにresume設定が入っていなかった場合は追加する
+    - name: Add resume option to GRUB_CMDLINE_LINUX
+      ansible.builtin.lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX="([^"]*)'
+        line: 'GRUB_CMDLINE_LINUX="\1 resume=UUID={{ res_swap_uuid.stdout }}"'
+        backrefs: true
+      register: res_grub_edit
+      when: res_resume_exist.stdout | length == 0
+
+    # GRUB_CMDLINE_LINUXにresume設定が入っている場合は設定値を書き換える
+    - name: Replace resume option to GRUB_CMDLINE_LINUX
+      ansible.builtin.lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX="(.*)resume=[^ |^"]*([^"]*)'
+        line: 'GRUB_CMDLINE_LINUX="\1resume=UUID={{ res_swap_uuid.stdout }}\2"'
+        backrefs: true
+      register: res_grub_edit
+      when: res_resume_exist.stdout  | length > 0
+
+    - name: Update GRUB configuration for UEFI systems
+      ansible.builtin.command: grub2-mkconfig -o /boot/efi/EFI/redhat/grub.cfg
+      when: res_grub_edit.changed
+      tags: skip_ansible_lint
+
+    - name: Reboot server
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+      when: res_grub_edit.changed
+      tags: skip_ansible_lint
+
+- name: Copy kdump.conf
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_kdump_conf_src }}"
+    dest: "/etc/kdump.conf"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+  register: res_kdump_copy
+
+- name: Restart and failback kdump configuration
+  block:
+    - name: Restart kdump
+      ansible.builtin.systemd_service:
+        name: kdump
+        state: restarted
+      when: res_kdump_copy.changed
+      tags: skip_ansible_lint
+
+  rescue:
+    - name: Restore the backup if validation fails
+      ansible.builtin.copy:
+        src: "{{ res_kdump_copy.backup_file }}"
+        dest: /etc/kdump.conf
+        mode: "0644"
+        remote_src: true
+
+    - name: Restart kdump
+      ansible.builtin.systemd_service:
+        name: kdump
+        state: restarted
+
+# test
+- name: Test block
+  tags:
+    - check_kdump
+    - check_all
+    - never
+  block:
+    - name: Get swap partition UUID
+      ansible.builtin.shell: lsblk -f | grep swap | awk '{print $4}'
+      register: res_swap_uuid
+      changed_when: false
+      tags: skip_ansible_lint
+      when: ansible_facts['distribution_major_version'] == '9'
+
+    - name: Check if the resume UUID is correctly set in /etc/default/grub
+      ansible.builtin.wait_for:
+        path: /etc/default/grub
+        search_regex: "GRUB_CMDLINE_LINUX.*resume=UUID={{ res_swap_uuid.stdout }}"
+        timeout: 3
+      when: ansible_facts['distribution_major_version'] == '9'
+
+    - name: Dry-run copy of kdump configuration files
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_kdump_conf_src }}"
+        dest: "/etc/kdump.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_kdump_conf_copy
+
+    - name: Check /etc/kdump.conf
+      ansible.builtin.assert:
+        that:
+          - "res_test_kdump_conf_copy.changed | bool == 0"
+        msg: "kdump configuration is differ from templates. \
+              {{ res_test_kdump_conf_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_kdump
+    - output_all
+    - never
+  block:
+    - name: Read /etc/default/grub
+      ansible.builtin.slurp:
+        src: /etc/default/grub
+      register: res_grub
+
+    - name: Output /etc/default/grub
+      ansible.builtin.debug:
+        var: res_grub.content | b64decode
+
+    - name: Read /etc/kdump.conf
+      ansible.builtin.slurp:
+        src: /etc/kdump.conf
+      register: res_kdump
+
+    - name: Output /etc/kdump.conf
+      ansible.builtin.debug:
+        var: res_kdump.content | b64decode
+
+    - name: Check kdump service status
+      ansible.builtin.command:
+        cmd: systemctl is-active kdump
+      changed_when: false
+      failed_when: false
+      register: res_kdump_status
+      tags: skip_ansible_lint
+
+    - name: Display kdump service status
+      ansible.builtin.debug:
+        msg: "kdump service is {{ res_kdump_status.stdout }}"

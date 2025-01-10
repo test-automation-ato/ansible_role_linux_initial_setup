@@ -1,0 +1,49 @@
+---
+- name: Copy systemd configuration file
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_system_conf_src }}"
+    dest: "/etc/systemd/system.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: Reboot server
+
+# test
+- name: Test blcok
+  tags:
+    - check_systemd
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of systemd configuration files
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_system_conf_src }}"
+        dest: "/etc/systemd/system.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_systemd_conf_copy
+
+    - name: "Check /etc/systemd/system.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_systemd_conf_copy.changed | bool == 0"
+        msg: "systemd configuration is differ from templates. \
+              {{ res_test_systemd_conf_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_systemd
+    - output_all
+    - never
+  block:
+    - name: "Read /etc/systemd/system.conf"
+      ansible.builtin.slurp:
+        src: "/etc/systemd/system.conf"
+      register: res_systemd_content
+
+    - name: "Output /etc/systemd/system.conf"
+      ansible.builtin.debug:
+        var: res_systemd_content.content | b64decode

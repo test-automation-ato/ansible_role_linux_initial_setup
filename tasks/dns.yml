@@ -1,0 +1,82 @@
+---
+- name: Disable NetworkManager DNS auto-configuration
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_networkmanager_conf_src }}"
+    dest: "/etc/NetworkManager/conf.d/90-dns-none.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload networkmanager
+
+- name: Copy resolv.conf
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_resolv_conf_src }}"
+    dest: "/etc/resolv.conf"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+
+# test
+- name: Test block
+  tags:
+    - check_dns
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of 90-dns-none.conf
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_networkmanager_conf_src }}"
+        dest: "/etc/NetworkManager/conf.d/90-dns-none.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_networkmanager_conf_copy
+
+    - name: "Check 90-dns-none.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_networkmanager_conf_copy.changed | bool == 0"
+        msg: "90-dns-none.conf is differ from templates. \
+              {{ res_test_networkmanager_conf_copy.diff | default('') }}"
+
+    - name: Dry-run copy of resolv.conf
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_resolv_conf_src }}"
+        dest: "/etc/resolv.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_resolv_conf_copy
+
+    - name: "Check /etc/resolv.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_resolv_conf_copy.changed | bool == 0"
+        msg: "resolv.conf is differ from templates. \
+              {{ res_test_resolv_conf_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_dns
+    - output_all
+    - never
+  block:
+    - name: Read 90-dns-none.conf
+      ansible.builtin.slurp:
+        src: /etc/NetworkManager/conf.d/90-dns-none.conf
+      register: res_networkmanager_conf
+
+    - name: Output /etc/NetworkManager/conf.d/90-dns-none.conf
+      ansible.builtin.debug:
+        var: res_networkmanager_conf.content | b64decode
+
+    - name: Read /etc/resolv.conf
+      ansible.builtin.slurp:
+        src: /etc/resolv.conf
+      register: res_resolv_conf
+
+    - name: Output /etc/resolv.conf
+      ansible.builtin.debug:
+        var: res_resolv_conf.content | b64decode

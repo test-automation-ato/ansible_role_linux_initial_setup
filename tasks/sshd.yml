@@ -1,0 +1,51 @@
+---
+- name: Copy sshd_config
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_sshd_conf_src }}"
+    dest: "/etc/ssh/sshd_config"
+    owner: root
+    group: root
+    backup: true
+    mode: "0644"
+    validate: 'sshd -T -f %s'
+  notify:
+    - Restart sshd
+
+# test
+- name: Test block
+  tags:
+    - check_sshd
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of sshd_config
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_sshd_conf_src }}"
+        dest: "/etc/ssh/sshd_config"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_sshd_conf_copy
+
+    - name: "Check /etc/ssh/sshd_config"
+      ansible.builtin.assert:
+        that:
+          - "res_test_sshd_conf_copy.changed | bool == 0"
+        msg: "sshd_config is differ from templates. \
+              {{ res_test_sshd_conf_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_sshd
+    - output_all
+    - never
+  block:
+    - name: Read /etc/ssh/sshd_config
+      ansible.builtin.slurp:
+        src: /etc/ssh/sshd_config
+      register: res_sshd_conf
+
+    - name: Output /etc/ssh/sshd_config
+      ansible.builtin.debug:
+        var: res_sshd_conf.content | b64decode

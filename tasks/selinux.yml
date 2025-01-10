@@ -1,0 +1,70 @@
+---
+# python3.11ではselinuxモジュールがそのままでは使えないため、インタープリターをOSデフォルトのpythonに指定
+- name: Set SELinux state
+  ansible.posix.selinux:
+    state: "{{ linux_initial_setup_selinux_state }}"
+    policy: "targeted"
+    update_kernel_param: true
+  register: res_set_selinux
+  vars:
+    ansible_python_interpreter: /usr/libexec/platform-python
+
+- name: Reboot server
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when: res_set_selinux.changed
+  tags: skip_ansible_lint
+
+# test
+- name: Test block
+  tags:
+    - check_selinux
+    - check_all
+    - never
+  block:
+    - name: Get current SELinux setting
+      ansible.builtin.command: getenforce
+      register: selinux_status
+      changed_when: false
+
+    - name: Verify SELinux setting
+      ansible.builtin.assert:
+        that:
+          - selinux_status.stdout | lower == linux_initial_setup_selinux_state | lower
+        fail_msg: "SELinux setting is not correct. Current setting: {{ selinux_status.stdout }}, \
+                   Expected setting: {{ linux_initial_setup_selinux_state }}"
+        success_msg: "SELinux setting is correct."
+
+# output
+- name: Output block
+  tags:
+    - output_selinux
+    - output_all
+    - never
+  block:
+    - name: "Command [getenforce]"
+      ansible.builtin.command: getenforce
+      register: res_getenforce
+      changed_when: false
+
+    - name: "Output command [getenforce]"
+      ansible.builtin.debug:
+        var: res_getenforce.stdout
+
+    - name: "Read /etc/selinux/config"
+      ansible.builtin.slurp:
+        src: "/etc/selinux/config"
+      register: res_selinux_conf
+
+    - name: "Output /etc/selinux/config"
+      ansible.builtin.debug:
+        var: res_selinux_conf.content | b64decode
+
+    - name: "Read /etc/default/grub"
+      ansible.builtin.slurp:
+        src: "/etc/default/grub"
+      register: res_grub
+
+    - name: "Output /etc/default/grub"
+      ansible.builtin.debug:
+        var: res_grub.content | b64decode

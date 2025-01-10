@@ -1,0 +1,61 @@
+---
+- name: Stop the ctrl-alt-del.target service
+  ansible.builtin.systemd_service:
+    name: ctrl-alt-del.target
+    enabled: false
+    state: stopped
+
+- name: Disable and mask the ctrl-alt-del.target service
+  ansible.builtin.systemd_service:
+    name: ctrl-alt-del.target
+    enabled: false
+    masked: true
+
+# test
+- name: Test block
+  tags:
+    - check_ctrl_alt_del
+    - check_all
+    - never
+  block:
+    - name: Get status of ctrl-alt-del.target
+      ansible.builtin.command: systemctl is-active ctrl-alt-del.target
+      register: res_ctrl_alt_del_status
+      changed_when: false
+      failed_when: false
+      tags: skip_ansible_lint
+
+    - name: Get enabled status of ctrl-alt-del.target
+      ansible.builtin.command: systemctl is-enabled ctrl-alt-del.target
+      register: res_ctrl_alt_del_enabled
+      changed_when: false
+      failed_when: false
+      tags: skip_ansible_lint
+
+    - name: Verify ctrl-alt-del.target is stopped
+      ansible.builtin.assert:
+        that: res_ctrl_alt_del_status.stdout == "inactive"
+        fail_msg: "ctrl-alt-del.target is not stopped"
+
+    - name: Verify ctrl-alt-del.target is masked
+      ansible.builtin.assert:
+        that: res_ctrl_alt_del_enabled.stdout == "masked"
+        fail_msg: "ctrl-alt-del.target is not masked"
+
+# output
+- name: Output block
+  tags:
+    - output_crtl_alt_del
+    - output_all
+    - never
+  block:
+    - name: "Command [systemctl status ctrl-alt-del.target]"
+      ansible.builtin.command:
+        cmd: systemctl status ctrl-alt-del.target
+      register: res_ctrl_alt_del_status
+      changed_when: false
+      failed_when: false
+
+    - name: "Output command [systemctl status ctrl-alt-del.target]"
+      ansible.builtin.debug:
+        var: res_ctrl_alt_del_status.stdout_lines

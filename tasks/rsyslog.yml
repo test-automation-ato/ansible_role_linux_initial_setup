@@ -1,0 +1,110 @@
+---
+- name: Copy rsyslog configuration file
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_rsyslog_conf_src }}"
+    dest: "/etc/rsyslog.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+    validate: echo %s;rsyslogd -N3
+  notify: Restart rsyslog
+
+- name: Copy journald configuration file
+  ansible.builtin.copy:
+    src: "{{ linux_initial_setup_journald_conf_src }}"
+    dest: "/etc/systemd/journald.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  register: res_journald_copy
+
+- name: Validate and failback journald configuration
+  when: res_journald_copy.changed
+  tags: skip_ansible_lint
+  block:
+    - name: Restart journald service to revert changes
+      ansible.builtin.systemd_service:
+        name: systemd-journald
+        state: restarted
+      register: res_journald_restart
+
+  always:
+    - name: Restore the backup if validation fails
+      ansible.builtin.copy:
+        src: "{{ res_journald_copy.backup_file }}"
+        dest: /etc/systemd/journald.conf
+        mode: "0644"
+        remote_src: true
+      when: res_journald_restart.failed or res_journald_restart.status.Result != 'success'
+
+    - name: Restart journald service to revert changes
+      ansible.builtin.systemd_service:
+        name: systemd-journald
+        state: restarted
+      when: res_journald_restart.failed or res_journald_restart.status.Result != 'success'
+
+# test
+- name: Test block
+  tags:
+    - check_rsyslog
+    - check_all
+    - never
+  block:
+    - name: Dry-run copy of rsyslog configuration files
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_rsyslog_conf_src }}"
+        dest: "/etc/rsyslog.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_rsyslog_conf_copy
+
+    - name: "Check /etc/rsyslog.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_rsyslog_conf_copy.changed | bool == 0"
+        msg: "rsyslog configuration is differ from templates. \
+              {{ res_test_rsyslog_conf_copy.diff | default('') }}"
+
+    - name: Dry-run copy of journald configuration files
+      ansible.builtin.copy:
+        src: "{{ linux_initial_setup_journald_conf_src }}"
+        dest: "/etc/systemd/journald.conf"
+        mode: "0644"
+      check_mode: true
+      diff: true
+      register: res_test_journald_conf_copy
+
+    - name: "Check /etc/systemd/journald.conf"
+      ansible.builtin.assert:
+        that:
+          - "res_test_journald_conf_copy.changed | bool == 0"
+        msg: "journald configuration is differ from templates. \
+              {{ res_test_journald_conf_copy.diff | default('') }}"
+
+# output
+- name: Output block
+  tags:
+    - output_rsyslog
+    - output_all
+    - never
+  block:
+    - name: Read /etc/rsyslog.conf
+      ansible.builtin.slurp:
+        src: /etc/rsyslog.conf
+      register: res_rsyslog
+
+    - name: Output /etc/rsyslog.conf
+      ansible.builtin.debug:
+        var: res_rsyslog.content | b64decode
+
+    - name: Read /etc/systemd/journald.conf
+      ansible.builtin.slurp:
+        src: /etc/systemd/journald.conf
+      register: res_journald
+
+    - name: Output /etc/systemd/journald.conf
+      ansible.builtin.debug:
+        var: res_journald.content | b64decode

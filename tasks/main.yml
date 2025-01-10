@@ -1,0 +1,85 @@
+---
+- name: Read Pattern file
+  ansible.builtin.include_vars:
+    file: "{{ linux_initial_setup_custom_pattern_file }}"
+  tags: always
+
+- name: Parameter_validation
+  ansible.builtin.import_tasks: parameter_validation.yml
+  tags: test
+
+- name: Setting rhsm
+  ansible.builtin.import_tasks: rhsm.yml
+  tags: rhsm
+
+- name: Setting dnf
+  ansible.builtin.import_tasks: dnf.yml
+  tags: dnf
+
+- name: Setting locale
+  ansible.builtin.import_tasks: locale.yml
+  tags: locale
+
+- name: Setting kdump
+  ansible.builtin.import_tasks: kdump.yml
+  tags: kdump
+
+- name: Setting services to enabled_disabled
+  ansible.builtin.import_tasks: services.yml
+  tags: services
+
+- name: Setting kernel
+  ansible.builtin.import_tasks: kernel.yml
+  tags: kernel
+
+- name: Setting Ctrl_Alt_Delete Key
+  ansible.builtin.import_tasks: ctrl_alt_del.yml
+  tags: ctrl_alt_del
+
+- name: Setting systemd
+  ansible.builtin.import_tasks: systemd.yml
+  tags: systemd
+
+- name: Setting hostname
+  ansible.builtin.import_tasks: hostname.yml
+  tags: hostname
+
+- name: Setting sshd
+  ansible.builtin.import_tasks: sshd.yml
+  tags: sshd
+
+- name: Setting rsyslog
+  ansible.builtin.import_tasks: rsyslog.yml
+  tags: rsyslog
+
+- name: Setting firewalld
+  ansible.builtin.import_tasks: firewalld.yml
+  tags: firewalld
+
+- name: Setting logrotate
+  ansible.builtin.import_tasks: logrotate.yml
+  tags: logrotate
+
+- name: Setting crontab
+  ansible.builtin.import_tasks: crontab.yml
+  tags: crontab
+
+- name: Setting vmtool
+  ansible.builtin.import_tasks: vmtool.yml
+  tags: vmtool
+
+- name: Setting dns
+  ansible.builtin.import_tasks: dns.yml
+  tags: dns
+
+- name: Setting chronyd
+  ansible.builtin.import_tasks: chronyd.yml
+  tags: chronyd
+
+- name: Setting users & groups
+  ansible.builtin.import_tasks: users.yml
+  tags: users
+
+- name: Setting selinux
+  ansible.builtin.import_tasks: selinux.yml
+  tags: selinux
